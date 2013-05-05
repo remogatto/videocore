@@ -16,8 +16,8 @@ The package will implement bindings to the following libraries:
 
 It's a long work. I'll appreciate your contribute and/or interest!
 
-[1] - https://github.com/remogatto/sms
-[2] - https://github.com/remogatto/gospeccy
-[3] - http://it.wikipedia.org/wiki/Raspberry_Pi
-[4] - http://www.raspberrypi.org/archives/tag/videocore
+* [1] - https://github.com/remogatto/sms
+* [2] - https://github.com/remogatto/gospeccy
+* [3] - http://it.wikipedia.org/wiki/Raspberry_Pi
+* [4] - http://www.raspberrypi.org/archives/tag/videocore
 
