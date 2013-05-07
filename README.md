@@ -1,23 +1,32 @@
-# Foreword
+# What's that?
 
-After seeing how bad my emulators[1,2] perform on the Raspberry PI[3]
-, I've decided to start developing a binding to the Broadcom
-VideoCore[4] API in order to introduce #golang to the beauties of
-hardware acceleration on this device.
+<tt>videocore</tt> is a [Go](http://golang.org) package for accessing
+the Broadcom VideoCore GPU on the [Raspberry
+PI](http://www.raspberrypi.org).
 
-https://github.com/remogatto/videocore
-
-The package will implement bindings to the following libraries:
+<tt>videocore</tt> implements bindings to the following libraries:
 
 * EGL
 * OpenGL ES
 * OpenVG
 * OpenMAX
 
-It's a long work. I'll appreciate your contribute and/or interest!
+It's still in a non-working state.
 
-* [1] - https://github.com/remogatto/sms
-* [2] - https://github.com/remogatto/gospeccy
-* [3] - http://it.wikipedia.org/wiki/Raspberry_Pi
-* [4] - http://www.raspberrypi.org/archives/tag/videocore
+# Install
 
+~~~bash
+$ go get github.com/remogatto/videocore/egl
+$ go get github.com/remogatto/videocore/opengles
+$ go get github.com/remogatto/videocore/openvg
+$ go get github.com/remogatto/videocore/openmax
+~~~
+
+# Thanks
+
+* Anthony Starks for his [openvg](https://github.com/ajstarks/openvg) library.
+* Roger Roach for his [egl/opengles](https://github.com/mortdeus/egles) libraries.
+
+# ToDo
+
+* OpenMAX bindings
