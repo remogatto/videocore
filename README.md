@@ -30,3 +30,7 @@ $ go get github.com/remogatto/videocore/openmax
 # ToDo
 
 * OpenMAX bindings
+
+# License
+
+See [LICENSE](videocore/LICENSE)
