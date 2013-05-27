@@ -1,10 +1,13 @@
 package gles2
 
-//#cgo linux LDFLAGS: -lGLESv2  -lEGL  
-//#include <stdlib.h>
-//#include <GLES2/gl2.h>
-//#include <GLES2/gl2ext.h>
-//#include <GLES2/gl2platform.h>
+/*
+#cgo CFLAGS:   -I/opt/vc/include -I/opt/vc/include/interface/vmcs_host/linux -I/opt/vc/include/interface/vcos/pthreads
+#cgo LDFLAGS:  -L/opt/vc/lib -lGLESv2
+#include <stdlib.h>
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
+#include <GLES2/gl2platform.h>
+*/
 import "C"
 import "unsafe"
 
@@ -96,11 +99,11 @@ func BlendFuncSeparate(
 }
 func BufferData(
 	target Enum, size SizeiPtr,
-	data Void, usage Enum) {
+	data unsafe.Pointer, usage Enum) {
 	C.glBufferData(
 		C.GLenum(target),
 		C.GLsizeiptr(size),
-		unsafe.Pointer(data),
+		data,
 		C.GLenum(usage))
 
 }
@@ -476,6 +479,7 @@ func GetProgramInfoLog(
 		(*C.GLsizei)(length),
 		s)
 	infolog = goString(s)
+	println(*infolog)
 }
 func GetRenderbufferParameteriv(
 	target Enum, pname Enum, params *int32) {
@@ -501,6 +505,7 @@ func GetShaderInfoLog(
 		(*C.GLsizei)(length),
 		s)
 	infolog = goString(s)
+	println(*infolog)
 }
 func GetShaderPrecisionFormat(
 	shadertype Enum, precisiontype Enum,
@@ -656,7 +661,7 @@ func ShaderSource(
 		C.GLsizei(count),
 		&s,
 		(*C.GLint)(length))
-	string_ = goString(s)
+	// string_ = goString(s)
 }
 func StencilFunc(
 	func_ Enum, ref int32, mask uint32) {
@@ -966,14 +971,14 @@ func VertexAttrib4fv(
 }
 func VertexAttribPointer(
 	indx uint32, size int32, type_ Enum,
-	normalized bool, stride Sizei, ptr Void) {
+	normalized bool, stride Sizei, ptr unsafe.Pointer) {
 	C.glVertexAttribPointer(
 		C.GLuint(indx),
 		C.GLint(size),
 		C.GLenum(type_),
 		glBoolean(normalized),
 		C.GLsizei(stride),
-		unsafe.Pointer(ptr))
+		ptr)
 }
 func Viewport(
 	x int32, y int32, width Sizei, height Sizei) {
@@ -1025,15 +1030,15 @@ func CreateShader(type_ Enum) uint32 {
 	return uint32(C.glCreateShader(
 		C.GLenum(type_)))
 }
-func GetAttribLocation(program uint32, name *string) uintptr {
-	s := glString(*name)
-	return uintptr(C.glGetAttribLocation(
+func GetAttribLocation(program uint32, name string) int {
+	s := glString(name)
+	return int(C.glGetAttribLocation(
 		C.GLuint(program),
 		s))
 }
-func GetUniformLocation(program uint32, name string) uintptr {
+func GetUniformLocation(program uint32, name string) int {
 	s := glString(name)
-	return uintptr(C.glGetUniformLocation(
+	return int(C.glGetUniformLocation(
 		C.GLuint(program),
 		s))
 }

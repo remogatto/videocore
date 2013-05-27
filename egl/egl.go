@@ -1,9 +1,9 @@
 package egl
 
 /*
-#cgo pkg-config: egl
-#include <EGL/egl.h>
-#include <EGL/eglplatform.h>
+#cgo CFLAGS:   -I/opt/vc/include -I/opt/vc/include/interface/vmcs_host/linux -I/opt/vc/include/interface/vcos/pthreads
+#cgo LDFLAGS:  -L/opt/vc/lib -lGLESv2
+#include "EGL/egl.h"
 */
 import "C"
 import (
@@ -23,9 +23,9 @@ func Terminate(
 		C.EGLDisplay(unsafe.Pointer(disp))))
 }
 func GetDisplay(
-	displayID NativeDisplayType) Display {
+	displayID int) Display {
 	return Display(C.eglGetDisplay(
-		C.EGLNativeDisplayType(unsafe.Pointer(displayID))))
+		C.EGLNativeDisplayType(unsafe.Pointer(nil))))
 }
 func QueryString(
 	disp Display, name int32) string {
@@ -85,11 +85,11 @@ func GetConfigAttrib(
 		(*C.EGLint)(unsafe.Pointer(value))))
 }
 func ChooseConfig(
-	disp Display, atrribList []int32, configs *Config,
+	disp Display, attribList []int32, configs *Config,
 	configSize int32, numConfig *int32) bool {
 	return goBoolean(C.eglChooseConfig(
 		C.EGLDisplay(unsafe.Pointer(disp)),
-		(*C.EGLint)(&atrribList[0]),
+		(*C.EGLint)(&attribList[0]),
 		(*C.EGLConfig)(unsafe.Pointer(configs)),
 		C.EGLint(configSize),
 		(*C.EGLint)(numConfig)))

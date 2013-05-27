@@ -1,10 +1,7 @@
 package egl
 
 /*
-#cgo pkg-config: egl
-#include <stdlib.h>
-#include <EGL/egl.h>
-#include <EGL/eglplatform.h>
+#include "EGL/egl.h"
 */
 import "C"
 import "unsafe"

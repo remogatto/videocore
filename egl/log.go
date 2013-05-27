@@ -1,7 +1,9 @@
 package egl
 
-import "log"
-import "strconv"
+import (
+	"log"
+	"strconv"
+)
 
 func LogError(msg int32) {
 	log.SetPrefix("[EGL] Error: ")
