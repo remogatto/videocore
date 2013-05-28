@@ -1,0 +1,435 @@
+
+package main
+
+import (
+	"github.com/remogatto/videocore/egl"
+	gl "github.com/remogatto/videocore/opengles"
+	"log"
+	"fmt"
+	"unsafe"
+	"runtime/debug"
+)
+
+type CubeState struct {
+	screen_width  uint32
+	screen_height uint32
+	// OpenGL|ES objects
+	display egl.Display
+	surface egl.Surface
+	context egl.Context
+
+	verbose  uint
+	vshader  uint32
+	fshader  uint32
+	mshader  uint32
+	program  uint32
+	program2 uint32
+	tex_fb   uint32
+	tex      uint32
+	buf      uint32
+	// julia attribs
+	attr_vertex uint32
+	unif_color, unif_scale, unif_offset, unif_tex, unif_centre int32
+	// mandelbrot attribs
+	attr_vertex2 uint32
+	unif_scale2, unif_offset2, unif_centre2 int32
+}
+
+var (
+	state CubeState
+)
+
+func assert(cond bool) {
+	if (!cond) {
+		debug.PrintStack()
+		panic("Assertion failed!")
+	}
+}
+
+func check() {
+	error := gl.GetError()
+	if error != 0 {
+		debug.PrintStack()
+		panic(fmt.Sprintf("An error occurred! Code: 0x%x", error))
+	}
+}
+
+func showLog(shader uint32) {
+	// Prints the compile log for a shader
+	var buf = make([]byte, 1024)
+	var s = string(buf)
+	gl.GetShaderInfoLog(shader, 1024, nil, &s)
+	log.Printf("%d:shader:\n%s\n", shader, s)
+}
+
+func showProgramLog(shader uint32) {
+	// Prints the information log for a program object
+	var logString string
+	gl.GetProgramInfoLog(shader, 1024, nil, &logString)
+	log.Printf("%d:program:\n%s\n", shader, logString)
+}
+
+func init_shaders(state *CubeState) {
+	var vertex_data = [16]float32{
+		-1.0, -1.0, 1.0, 1.0,
+		1.0, -1.0, 1.0, 1.0,
+		1.0, 1.0, 1.0, 1.0,
+		-1.0, 1.0, 1.0, 1.0,
+	}
+	var vshader_source = `
+
+attribute vec4 vertex;
+varying vec2 tcoord;
+
+void main(void) {
+  vec4 pos = vertex;
+  gl_Position = pos;
+  tcoord = vertex.xy*0.5+0.5;
+}
+
+`
+	//Mandelbrot
+	var mandelbrot_fshader_source string = `
+
+uniform vec4 color;
+uniform vec2 scale;
+uniform vec2 centre;
+varying vec2 tcoord;
+
+void main(void) {
+  float intensity;
+  vec4 color2;
+  float cr=(gl_FragCoord.x-centre.x)*scale.x;
+  float ci=(gl_FragCoord.y-centre.y)*scale.y;
+  float ar=cr;
+  float ai=ci;
+  float tr,ti;
+  float col=0.0;
+  float p=0.0;
+  int i=0;
+  for(int i2=1; i2<16; i2++) {
+    tr=ar*ar-ai*ai+cr;
+    ti=2.0*ar*ai+ci;
+    p=tr*tr+ti*ti;
+    ar=tr;
+    ai=ti;
+    if (p>16.0){
+      i=i2;
+      break;
+    }
+  }
+  color2 = vec4(float(i)*0.0625,0,0,1);
+  gl_FragColor = color2;
+}
+
+`
+	// Julia
+	var julia_fshader_source string = `
+
+uniform vec4 color;
+uniform vec2 scale;
+uniform vec2 centre;
+uniform vec2 offset;
+varying vec2 tcoord;
+uniform sampler2D tex;
+void main(void) {
+  float intensity;
+  vec4 color2;
+  float ar=(gl_FragCoord.x-centre.x)*scale.x;
+  float ai=(gl_FragCoord.y-centre.y)*scale.y;
+  float cr=(offset.x-centre.x)*scale.x;
+  float ci=(offset.y-centre.y)*scale.y;
+  float tr,ti;float col=0.0;
+  float p=0.0;int i=0;
+  vec2 t2;
+  t2.x=tcoord.x+(offset.x-centre.x)*(0.5/centre.y);
+  t2.y=tcoord.y+(offset.y-centre.y)*(0.5/centre.x);
+  for(int i2=1; i2<16; i2++) {
+    tr=ar*ar-ai*ai+cr;
+    ti=2.0*ar*ai+ci;
+    p=tr*tr+ti*ti;
+    ar=tr;
+    ai=ti;
+    if (p>16.0) {
+      i=i2;
+      break;
+    }
+  } 
+  color2 = vec4(0,float(i)*0.0625,0,1);
+  color2 = color2+texture2D(tex,t2);
+  gl_FragColor = color2;
+}
+
+`	
+	state.vshader = gl.CreateShader(gl.VERTEX_SHADER)
+	check()
+	gl.ShaderSource(state.vshader, 1, &vshader_source, nil)
+	check()
+	gl.CompileShader(state.vshader)
+	check()
+
+	if state.verbose == 1 {
+		showLog(state.vshader)
+	}
+
+	state.fshader = gl.CreateShader(gl.FRAGMENT_SHADER)
+	gl.ShaderSource(state.fshader, 1, &julia_fshader_source, nil)
+	gl.CompileShader(state.fshader)
+	check()
+
+	if state.verbose == 1 {
+		showLog(state.fshader)
+	}
+
+	state.mshader = gl.CreateShader(gl.FRAGMENT_SHADER)
+	gl.ShaderSource(state.mshader, 1, &mandelbrot_fshader_source, nil)
+	gl.CompileShader(state.mshader)
+	check()
+
+	if state.verbose == 1 {
+		showLog(state.mshader)
+	}
+
+	// julia
+	state.program = gl.CreateProgram()
+	gl.AttachShader(state.program, state.vshader)
+	gl.AttachShader(state.program, state.fshader)
+	gl.LinkProgram(state.program)
+	check()
+
+	if state.verbose == 1 {
+		showProgramLog(state.program)
+	}
+
+	state.attr_vertex = uint32(gl.GetAttribLocation(state.program, "vertex"))
+	println(state.attr_vertex)
+	state.unif_color = int32(gl.GetUniformLocation(state.program, "color"))
+	println(state.unif_color)
+	state.unif_scale = int32(gl.GetUniformLocation(state.program, "scale"))
+	println(state.unif_scale)
+	state.unif_offset = int32(gl.GetUniformLocation(state.program, "offset"))
+	println(state.unif_offset)
+	state.unif_tex = int32(gl.GetUniformLocation(state.program, "tex"))
+	println(state.unif_tex)
+	state.unif_centre = int32(gl.GetUniformLocation(state.program, "centre"))
+	println(state.unif_centre)
+
+	// mandelbrot
+	state.program2 = gl.CreateProgram()
+	gl.AttachShader(state.program2, state.vshader)
+	gl.AttachShader(state.program2, state.mshader)
+	gl.LinkProgram(state.program2)
+
+	if state.verbose == 1 {
+		showProgramLog(state.program2)
+	}
+
+	check()
+
+	state.attr_vertex2 = uint32(gl.GetAttribLocation(state.program2, "vertex"))
+	println(state.attr_vertex2)
+	state.unif_scale2 = int32(gl.GetUniformLocation(state.program2, "scale"))
+	println(state.unif_scale2)
+	state.unif_offset2 = int32(gl.GetAttribLocation(state.program2, "offset"))
+	println(state.unif_offset2)
+	state.unif_centre2 = int32(gl.GetUniformLocation(state.program2, "centre"))
+	println(state.unif_centre2)
+	check()
+
+	gl.ClearColor(1.0, 0.0, 1.0, 1.0)
+
+	gl.GenBuffers(1, &state.buf)
+
+	check()
+
+	// Prepare a texture image
+	gl.GenTextures(1, &state.tex)
+	check()
+	gl.BindTexture(gl.TEXTURE_2D, state.tex)
+	check()
+	// glActiveTexture(0)
+	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.Sizei(state.screen_width), gl.Sizei(state.screen_height), 0, gl.RGB, gl.UNSIGNED_SHORT_5_6_5, nil)
+	check()
+	gl.TexParameterf(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+	gl.TexParameterf(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+	check()
+	// Prepare a framebuffer for rendering
+	gl.GenFramebuffers(1, &state.tex_fb)
+	check()
+	gl.BindFramebuffer(gl.FRAMEBUFFER, state.tex_fb)
+	check()
+	gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, state.tex, 0)
+	check()
+	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
+	check()
+	// Prepare viewport
+	gl.Viewport(0, 0, gl.Sizei(state.screen_width), gl.Sizei(state.screen_height))
+	check()
+
+	// Upload vertex data to a buffer
+	gl.BindBuffer(gl.ARRAY_BUFFER, state.buf)
+	gl.BufferData(gl.ARRAY_BUFFER, gl.SizeiPtr(len(vertex_data))*4, unsafe.Pointer(&vertex_data[0]), gl.STATIC_DRAW)
+	gl.VertexAttribPointer(state.attr_vertex, 4, gl.FLOAT, false, 16, unsafe.Pointer(&vertex_data[0]))
+	gl.EnableVertexAttribArray(state.attr_vertex)
+	check()
+}
+
+func draw_mandelbrot_to_texture(state *CubeState, cx float32, cy float32, scale float32) {
+	// Draw the mandelbrot to a texture
+	gl.BindFramebuffer(gl.FRAMEBUFFER, state.tex_fb)
+	check()
+	gl.EnableVertexAttribArray(state.attr_vertex)
+//	gl.BindBuffer(gl.ARRAY_BUFFER, state.buf)
+
+	gl.UseProgram(state.program2)
+	check()
+
+	gl.Uniform2f(state.unif_scale2, scale, scale)
+	gl.Uniform2f(state.unif_centre2, cx, cy)
+	check()
+	gl.DrawArrays(gl.TRIANGLE_FAN, 0, 4)
+	check()
+
+	gl.DisableVertexAttribArray(state.attr_vertex)
+	gl.Flush()
+	gl.Finish()
+	check()
+}
+
+func draw_triangles(state *CubeState, cx float32, cy float32, scale float32, x float32, y float32) {
+	// Now render to the main frame buffer
+	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
+	// Clear the background (not really necessary I suppose)
+	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+	check()
+
+	// gl.BindBuffer(gl.ARRAY_BUFFER, state.buf)
+	gl.EnableVertexAttribArray(state.attr_vertex)
+	check()
+	gl.UseProgram(state.program)
+	check()
+	gl.BindTexture(gl.TEXTURE_2D, state.tex)
+	check()
+	gl.Uniform4f(state.unif_color, 0.5, 0.0, 0.8, 1.0)
+	gl.Uniform2f(state.unif_scale, scale, scale)
+	gl.Uniform2f(state.unif_offset, x, y)
+	gl.Uniform2f(state.unif_centre, cx, cy)
+	gl.Uniform1i(state.unif_tex, 0) // I don't really understand this part, perhaps it relates to active texture?
+	check()
+
+	gl.DrawArrays(gl.TRIANGLE_FAN, 0, 4)
+	check()
+
+	gl.DisableVertexAttribArray(state.attr_vertex)
+	// gl.BindBuffer(gl.ARRAY_BUFFER, 0)
+
+	gl.Flush()
+	gl.Finish()
+	check()
+
+	egl.SwapBuffers(state.display, state.surface)
+	check()
+}
+
+func init_ogl(state *CubeState) {
+	var (
+		config           egl.Config
+b		numConfig        int32
+		dstRect, srcRect egl.VCRect
+		nativeWindow     egl.EGLDispmanxWindow
+	)
+	attr := []int32{
+		egl.RED_SIZE, 8,
+		egl.GREEN_SIZE, 8,
+		egl.BLUE_SIZE, 8,
+		egl.ALPHA_SIZE, 8,
+		egl.SURFACE_TYPE, egl.WINDOW_BIT,
+		egl.NONE,
+	}
+	context_attributes := []int32{
+		egl.CONTEXT_CLIENT_VERSION, 2,
+		egl.NONE,
+	}
+
+	state.display = egl.GetDisplay(0)
+	egl.Initialize(state.display, nil, nil)
+	egl.ChooseConfig(state.display, attr, &config, 1, &numConfig)
+	check()
+
+	egl.BindAPI(egl.OPENGL_ES_API)
+	check()
+
+	state.context = egl.CreateContext(state.display, config, egl.NO_CONTEXT, &context_attributes[0])
+	state.screen_width, state.screen_height = egl.GraphicsGetDisplaySize(0)
+	log.Printf("Display size W: %d H: %d\n", state.screen_width, state.screen_height)
+
+	dstRect.X = 0
+	dstRect.Y = 0
+	dstRect.Width = int32(state.screen_width)
+	dstRect.Height = int32(state.screen_height)
+
+	srcRect.X = 0
+	srcRect.Y = 0
+	srcRect.Width = int32(state.screen_width << 16)
+	srcRect.Height = int32(state.screen_height << 16)
+
+	dispman_display := egl.VCDispmanxDisplayOpen(0 /* LCD */)
+	dispman_update := egl.VCDispmanxUpdateStart(0)
+
+	dispman_element := egl.VCDispmanxElementAdd(
+		dispman_update,
+		dispman_display,
+		0, /*layer */
+		&dstRect,
+		0, /*src */
+		&srcRect,
+		egl.DISPMANX_PROTECTION_NONE,
+		nil, /*alpha */
+		nil, /*clamp */
+		0 /*transform */)
+	check()
+
+	nativeWindow.Element = dispman_element
+	nativeWindow.Width = int(state.screen_width)
+	nativeWindow.Height = int(state.screen_height)
+	egl.VCDispmanxUpdateSubmitSync(dispman_update)
+
+	check()
+
+	state.surface = egl.CreateWindowSurface(
+		state.display,
+		config,
+		egl.NativeWindowType(unsafe.Pointer(&nativeWindow)),
+		nil)
+	assert(state.surface != egl.NO_SURFACE)
+	
+	// connect the context to the surface
+	result := egl.MakeCurrent(state.display, state.surface, state.surface, state.context)
+	assert(result)
+
+	// Set background color and clear buffers
+	gl.ClearColor(1.0, 0.25, 0.35, 1.0)
+	gl.Clear(gl.COLOR_BUFFER_BIT)
+}
+
+//==============================================================================
+
+func main() {
+	var (
+		cx, cy    float32
+		x, y int = 800, 400
+	)
+	state.verbose = 1
+
+	egl.BCMHostInit()
+
+	// Start OGLES
+	init_ogl(&state)
+	init_shaders(&state)
+	cx = float32(state.screen_width) / 2
+	cy = float32(state.screen_height) / 2
+	draw_mandelbrot_to_texture(&state, cx, cy, 0.003)
+	for {
+		draw_triangles(&state, cx, cy, 0.003, float32(x), float32(y))
+	}
+}
